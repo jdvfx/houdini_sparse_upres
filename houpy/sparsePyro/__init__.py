@@ -161,6 +161,24 @@ def get_pyro_nodes():
     global __sop_node__
     global __sop_pyro_solver__
 
+    # # auto-detect pyro solver
+    # # search for DOP pyrosolver nodes
+    # dop_pyro = hou.nodeType("Dop/pyrosolver_sparse").instances()
+
+    # if len(dop_pyro)>1:
+        # print "multiple DOP pyrosolver detected: please use manual selection"
+    # else:
+        # # search for SOP pyrosolver node
+        # sop_pyro = hou.nodeType("Sop/pyrosolver").instances()
+        # if len(sop_pyro)>0:
+            # print "SOP pyrosolver detected"
+        # else:
+            # print "DOP pyrosolver detected"
+
+
+
+
+
     # manual selection (top>bottom search)
     selected_nodes = hou.selectedNodes()
     if len(selected_nodes) > 0:
