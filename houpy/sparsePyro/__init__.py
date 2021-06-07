@@ -28,7 +28,7 @@ def copyParmsFolders(sourceNode,destinationNode,parmFolders):
                 r = [k,sourceParm]
                 ramps.append(r)
             else:
-                #ramps.append(r) # TO FIX!!!
+                #ramps.append(r) # TO FIX!!! wtf is that doing here?
                 sourceParm.set(k)
 
     if len(ramps)>0:
@@ -157,22 +157,93 @@ def copyUpresNodes(upresNode,sparsePyro):
 def upresUIcleanup(sopPyroSolver):
     sopPyroSolver.setParms({"autoregenrest":0,"lowressoppath":"`opinputpath('.',1)`","import_low_res_time":0})
 
+
+
+
+
+# delete previous upres nodes (for dev/testing)
 deleteAllUpresNodes()
-sopPyroSolver=getSopPyroSolver()
-sopPyroSolver.allowEditingOfContents()
-sparsePyro = sopPyroSolver.node("dopnet1/pyro_solver")
-solver = sparsePyro.node("solver")
-sparsePyro.allowEditingOfContents()
-solver.allowEditingOfContents()
-bypassNodes(sparsePyro)
-upresNode = createUpresNode(sparsePyro)
-cleanupUpresSolver(upresNode)
-renameDuplicateParms(upresNode,sparsePyro,sopPyroSolver)
-copyParmFolders(upresNode,sparsePyro)
-copyUpresNodes(upresNode,sparsePyro)
-parmFolders = ('Upres Simulation','Upres Shape','Upres Advanced')
-copyParmsFolders(sparsePyro,sopPyroSolver,parmFolders)
-upresUIcleanup(sopPyroSolver)
+
+#sopPyroSolver=getSopPyroSolver()
 
 
+
+def get_pyro_nodes():
+
+    global __sop_pyro_solver__
+    global __dopnet__
+    global __pyro_solver__
+    global __smoke_solver__
+    global __upres_ui_node__
+
+    # manual selection (top>bottom search)
+    selected_nodes = hou.selectedNodes()
+    if len(selected_nodes)>0:
+        node = selected_nodes[0]
+        node_type = node.type().name()
+
+        # /obj/geo/pyrosolver
+        if node_type == 'pyrosolver':
+
+            __sop_pyro_solver__ = node
+            __dopnet__ = node.node("dopnet1")
+            __pyro_solver__ = __dopnet__.node("pyro_solver")
+            __smoke_solver__ = __pyro_solver__.node("solver")
+            __upres_ui_node__ = __sop_pyro_solver__
+
+        # /obj/geo/dopnet/pyrosolver
+        if node_type == 'dopnet':
+            for child in node.children():
+                if child.type().name()=="pyrosolver_sparse":
+                    __pyro_solver__ = child
+                    __upres_ui_node__ = child
+                    __smoke_solver__ = __pyro_solver__.node("solver")
+                    __dopnet__ = node
+                    break
+    else:
+        hou.ui.displayMessage("ERROR: select SOP pyrosolver or SOP dopnet containing pyrosolver",buttons=("OK",))
+
+
+__sop_pyro_solver__ = ''
+__dopnet__ = ''
+__pyro_solver__ = ''
+__smoke_solver__ = ''
+__upres_ui_node__ =''
+
+get_pyro_nodes()
+print(__sop_pyro_solver__ , __dopnet__ , __pyro_solver__ , __smoke_solver__ , __upres_ui_node__ )
+
+
+# case 1 (SOP)
+# SOP pyrosolver >>> "sopPyroSolver" !upresUI!
+# + dopnet >>> "dopnet"
+#   + pyro_solver [pyro solver (sparse)] >>> pyroSolver
+#     + solver [smoke solver (sparse)] >>> smokeSolver
+
+# case 2 (DOP)
+# dopnet (in SOPs)
+#   + pyro_solver [pyro solver (sparse)] !upresUI!
+#     + solver [smoke solver (sparse)]
+
+
+# sopPyroSolver.allowEditingOfContents()
+# sparsePyro = sopPyroSolver.node("dopnet1/pyro_solver")
+# solver = sparsePyro.node("solver")
+# sparsePyro.allowEditingOfContents()
+# solver.allowEditingOfContents()
+# bypassNodes(sparsePyro)
+# upresNode = createUpresNode(sparsePyro)
+# cleanupUpresSolver(upresNode)
+# renameDuplicateParms(upresNode,sparsePyro,sopPyroSolver)
+# copyParmFolders(upresNode,sparsePyro)
+# copyUpresNodes(upresNode,sparsePyro)
+# parmFolders = ('Upres Simulation','Upres Shape','Upres Advanced')
+# copyParmsFolders(sparsePyro,sopPyroSolver,parmFolders)
+# upresUIcleanup(sopPyroSolver)
+
+
+# TO DO:
+# - PEP8/utf8 (check python3 header)
+# - get SOP_Pyro or DOP_Pyro
+# - make code less monolithic
 
