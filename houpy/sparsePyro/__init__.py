@@ -53,6 +53,9 @@ def deleteAllUpresNodes():
     for i in hou.nodeType("Sop/pyrosolver").instances():
         if i.name().endswith("upres"):
             i.destroy()
+    for i in hou.nodeType("Sop/dopnet").instances():
+        if i.name().endswith("upres"):
+            i.destroy()
 
 def getSopPyroSolver():
     # if only one sparse_pyro node, return it, else use node selection
@@ -76,16 +79,6 @@ def getSopPyroSolver():
         sparsePyro=a[0]
     return sparsePyro
 
-def bypassNodes(sparsePyro):
-    bypassesNodesStr='MOTION_OPERATORS#DISTURBANCE#FORCES#SHREDDING#TURBULENCE#add_turbulence#disturb_vel#shred_vel#temp_diffusion#TEMPERATURE#temp_cooling#scaled_external#absolute_external#FORCES_2#buoyancy#viscosity#project#reset_collision#reset_collisionvel#build_collision_mask#IOP#collision_velocities#collision_feedback#reset#COLLISION_MASK#CORRECT_IN_COLLISIONS#PRESSURE_PROJECTION#hourglass_filter#HOURGLASS#VISUALIZE_HF#create_temp_div#hg_f_vis#reset_temp_div#CLEANUP#reset_divergence#VELOCITY_ADVECTION#ADVECTION_REFLECTION_DOUBLE#advect_vel#create_temp_vel2#copy_preproj#ADVECTION_REFLECTION_SINGLE#reflect#advect_temp_vel#copy_to_vel#do_reflect#advect_vel_normal#update_pass#clear_temp_vel#SAVE_PREPROJ#minimal_solve_2#ADVECTION_REFLECTION#minimal_solve_3#minimal_solve_4_FORCES#minimal_solve_5#minimal_solve_6#minimal_solve_7#minimal_solve_8#PP_NORMAL#project_minimal#match_speed#calculate_speed#minimal_solve_10#enable_speed#'
-    bypassesNodes=bypassesNodesStr.split("#")
-    solver = sparsePyro.node("solver")
-    for i in sparsePyro.children():
-        if i.name() in bypassesNodes:
-            i.bypass(1)
-    for i in solver.children():
-        if i.name() in bypassesNodes:
-            i.bypass(1)
 
 # create upres node and unlock
 def createUpresNode(sparsePyro):
@@ -161,20 +154,17 @@ def upresUIcleanup(sopPyroSolver):
 
 
 
-# delete previous upres nodes (for dev/testing)
-deleteAllUpresNodes()
 
 #sopPyroSolver=getSopPyroSolver()
 
-
+###############################################################################
+###############################################################################
+###############################################################################
 
 def get_pyro_nodes():
 
+    global __sop_node__
     global __sop_pyro_solver__
-    global __dopnet__
-    global __pyro_solver__
-    global __smoke_solver__
-    global __upres_ui_node__
 
     # manual selection (top>bottom search)
     selected_nodes = hou.selectedNodes()
@@ -184,46 +174,82 @@ def get_pyro_nodes():
 
         # /obj/geo/pyrosolver
         if node_type == 'pyrosolver':
-
+            __sop_node__ = node
             __sop_pyro_solver__ = node
-            __dopnet__ = node.node("dopnet1")
-            __pyro_solver__ = __dopnet__.node("pyro_solver")
-            __smoke_solver__ = __pyro_solver__.node("solver")
-            __upres_ui_node__ = __sop_pyro_solver__
 
         # /obj/geo/dopnet/pyrosolver
         if node_type == 'dopnet':
             for child in node.children():
                 if child.type().name()=="pyrosolver_sparse":
-                    __pyro_solver__ = child
-                    __upres_ui_node__ = child
-                    __smoke_solver__ = __pyro_solver__.node("solver")
-                    __dopnet__ = node
+                    __sop_node__ = node
                     break
     else:
         hou.ui.displayMessage("ERROR: select SOP pyrosolver or SOP dopnet containing pyrosolver",buttons=("OK",))
 
+def create_sop_upres_node(sop_node):
 
+    global __upres_sop_node__
+    global __pyro_solver__
+
+    # duplicate SOP node, rename, offset position, change color
+    nodescopy = hou.copyNodesTo((sop_node,),sop_node.parent())
+    upres_sop_node = nodescopy[0]
+
+    pos = sop_node.position()
+    upres_sop_node.setPosition((pos[0]+4,pos[1]))
+    upres_sop_node.setName(sop_node.name()+"_upres")
+
+    upres_sop_node.allowEditingOfContents()
+    upres_sop_node.setColor(hou.Color(1,2,0))
+
+    __upres_sop_node__ = upres_sop_node
+
+    # get pyrosolver (if no sop_pyro, then it's DOP)
+    if __sop_pyro_solver__=='':
+        solverpath = 'pyrosolver_sparse1'
+    else:
+        solverpath = 'dopnet1/pyro_solver'
+    __pyro_solver__ = upres_sop_node.node(solverpath)
+
+def bypassNodes(sparsePyro):
+    bypassesNodesStr='MOTION_OPERATORS#DISTURBANCE#FORCES#SHREDDING#TURBULENCE#add_turbulence#disturb_vel#shred_vel#temp_diffusion#TEMPERATURE#temp_cooling#scaled_external#absolute_external#FORCES_2#buoyancy#viscosity#project#reset_collision#reset_collisionvel#build_collision_mask#IOP#collision_velocities#collision_feedback#reset#COLLISION_MASK#CORRECT_IN_COLLISIONS#PRESSURE_PROJECTION#hourglass_filter#HOURGLASS#VISUALIZE_HF#create_temp_div#hg_f_vis#reset_temp_div#CLEANUP#reset_divergence#VELOCITY_ADVECTION#ADVECTION_REFLECTION_DOUBLE#advect_vel#create_temp_vel2#copy_preproj#ADVECTION_REFLECTION_SINGLE#reflect#advect_temp_vel#copy_to_vel#do_reflect#advect_vel_normal#update_pass#clear_temp_vel#SAVE_PREPROJ#minimal_solve_2#ADVECTION_REFLECTION#minimal_solve_3#minimal_solve_4_FORCES#minimal_solve_5#minimal_solve_6#minimal_solve_7#minimal_solve_8#PP_NORMAL#project_minimal#match_speed#calculate_speed#minimal_solve_10#enable_speed#'
+    bypassesNodes=bypassesNodesStr.split("#")
+    solver = sparsePyro.node("solver")
+    for i in sparsePyro.children():
+        if i.name() in bypassesNodes:
+            i.bypass(1)
+    for i in solver.children():
+        if i.name() in bypassesNodes:
+            i.bypass(1)
+
+# -----------------------------------------------------------------------------
+
+__upres_sop_node__ = ''
 __sop_pyro_solver__ = ''
 __dopnet__ = ''
 __pyro_solver__ = ''
-__smoke_solver__ = ''
 __upres_ui_node__ =''
+__sop_node__ = ''
 
+# delete previous upres nodes (for dev/testing)
+# aa (Vim fast jump)
+deleteAllUpresNodes()
 get_pyro_nodes()
-print(__sop_pyro_solver__ , __dopnet__ , __pyro_solver__ , __smoke_solver__ , __upres_ui_node__ )
-
+create_sop_upres_node(__sop_node__)
+__pyro_solver__.allowEditingOfContents()
+__pyro_solver__.node("solver").allowEditingOfContents()
+bypassNodes(__pyro_solver__)
 
 # case 1 (SOP)
-# SOP pyrosolver >>> "sopPyroSolver" !upresUI!
+# SOP pyrosolver >>> "sopPyroSolver" !upresUI! !SOP_node!
 # + dopnet >>> "dopnet"
 #   + pyro_solver [pyro solver (sparse)] >>> pyroSolver
-#     + solver [smoke solver (sparse)] >>> smokeSolver
+#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
 
 # case 2 (DOP)
-# dopnet (in SOPs)
+# dopnet (in SOPs) !SOP_node!
 #   + pyro_solver [pyro solver (sparse)] !upresUI!
-#     + solver [smoke solver (sparse)]
+#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
 
 
 # sopPyroSolver.allowEditingOfContents()
@@ -246,4 +272,7 @@ print(__sop_pyro_solver__ , __dopnet__ , __pyro_solver__ , __smoke_solver__ , __
 # - PEP8/utf8 (check python3 header)
 # - get SOP_Pyro or DOP_Pyro
 # - make code less monolithic
+# - should work for SOP pyrosolver and DOP pyrosolver (inside SOP) - no /OBJ/DOP/pyrosolver BS!
+
+
 
