@@ -166,14 +166,14 @@ def get_pyro_nodes():
     # dop_pyro = hou.nodeType("Dop/pyrosolver_sparse").instances()
 
     # if len(dop_pyro)>1:
-        # print "multiple DOP pyrosolver detected: please use manual selection"
+        # print("multiple DOP pyrosolver detected: please use manual selection")
     # else:
         # # search for SOP pyrosolver node
         # sop_pyro = hou.nodeType("Sop/pyrosolver").instances()
         # if len(sop_pyro)>0:
-            # print "SOP pyrosolver detected"
+            # print("SOP pyrosolver detected")
         # else:
-            # print "DOP pyrosolver detected"
+            # print("DOP pyrosolver detected")
 
 
 
@@ -228,7 +228,7 @@ def create_sop_upres_node(sop_node):
 
 def bypassNodes(sparsePyro):
     # list of nodes to bypass (created from selection)
-    bypassesNode = [
+    bypassedNodes = [
         'MOTION_OPERATORS', 'DISTURBANCE', 'FORCES', 'SHREDDING', 'TURBULENCE',
         'add_turbulence', 'disturb_vel', 'shred_vel', 'temp_diffusion',
         'TEMPERATURE', 'temp_cooling', 'scaled_external', 'absolute_external',
@@ -249,10 +249,10 @@ def bypassNodes(sparsePyro):
     ]
     solver = sparsePyro.node("solver")
     for i in sparsePyro.children():
-        if i.name() in bypassesNodes:
+        if i.name() in bypassedNodes:
             i.bypass(1)
     for i in solver.children():
-        if i.name() in bypassesNodes:
+        if i.name() in bypassedNodes:
             i.bypass(1)
 
 # -----------------------------------------------------------------------------
