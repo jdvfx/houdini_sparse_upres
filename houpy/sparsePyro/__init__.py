@@ -80,20 +80,7 @@ def getSopPyroSolver():
     return sparsePyro
 
 
-# create upres node and unlock
-def createUpresNode(sparsePyro):
-    upresNode = sparsePyro.parent().createNode("gasupres::2.0")
-    upresNode.allowEditingOfContents()
-    return upresNode
 
-def cleanupUpresSolver(upresNode):
-    # disable fuel,set borders to constant,set temperature,density to scalar
-    upresNode.parm("enablesolver3/enable").deleteAllKeyframes()
-    n = ['lowrestemperature','lowresdensity','lowresvel']
-    for i in n: upresNode.node(i).parm("border").set(0)
-    n.pop()
-    for i in n: upresNode.node(i).parm("rank").set(0)
-    # fix lowres density import path, disable rest regen, set lowres timescale=1
 
 def renameDuplicateParms(upresNode,sparsePyroNode,sopPyroSolver):
     # add sparsePyro and sopPyro parms in list
@@ -147,58 +134,60 @@ def copyUpresNodes(upresNode,sparsePyro):
         rootnode = sparsePyro.node(i)
         merge1.setNextInput(rootnode)
 
-def upresUIcleanup(sopPyroSolver):
-    sopPyroSolver.setParms({"autoregenrest":0,"lowressoppath":"`opinputpath('.',1)`","import_low_res_time":0})
-
-#sopPyroSolver=getSopPyroSolver()
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
 
 def get_pyro_nodes():
 
     global __sop_node__
     global __sop_pyro_solver__
 
-    # # auto-detect pyro solver
-    # # search for DOP pyrosolver nodes
-    # dop_pyro = hou.nodeType("Dop/pyrosolver_sparse").instances()
+    # auto-detect: search for DOP pyrosolver nodes
+    pyrosolver_instances = hou.nodeType("Dop/pyrosolver_sparse").instances()
 
-    # if len(dop_pyro)>1:
-        # print("multiple DOP pyrosolver detected: please use manual selection")
-    # else:
-        # # search for SOP pyrosolver node
-        # sop_pyro = hou.nodeType("Sop/pyrosolver").instances()
-        # if len(sop_pyro)>0:
-            # print("SOP pyrosolver detected")
-        # else:
-            # print("DOP pyrosolver detected")
+    if len(pyrosolver_instances)>1:
 
+        # # multiple pyrosolver nodes detected, use manual selection
+        selected_nodes = hou.selectedNodes()
+        if len(selected_nodes) > 0:
 
+            node = selected_nodes[0]
+            node_type = node.type().name()
 
+            if node_type == 'pyrosolver':
+                __sop_node__ = node
+                __sop_pyro_solver__ = node
 
+            if node_type == 'dopnet':
+                for child in node.children():
+                    if child.type().name() == "pyrosolver_sparse":
+                        __sop_node__ = node
+                        break
 
-    # manual selection (top>bottom search)
-    selected_nodes = hou.selectedNodes()
-    if len(selected_nodes) > 0:
-        node = selected_nodes[0]
-        node_type = node.type().name()
+        # no node selected or no pyrosolver found in selection
+        if __sop_node__=='':
+            hou.ui.displayMessage("ERROR: \nselect SOP pyrosolver node\nor SOP dopnet containing pyrosolver", buttons=("OK",))
 
-        # /obj/geo/pyrosolver
-        if node_type == 'pyrosolver':
-            __sop_node__ = node
-            __sop_pyro_solver__ = node
-
-        # /obj/geo/dopnet/pyrosolver
-        if node_type == 'dopnet':
-            for child in node.children():
-                if child.type().name() == "pyrosolver_sparse":
-                    __sop_node__ = node
-                    break
     else:
-        hou.ui.displayMessage("ERROR: select SOP pyrosolver or SOP dopnet \
-                containing pyrosolver", buttons=("OK",))
+
+        # only one instance of pyrosolver_sparse node found
+        # search for SOP pyrosolver node
+        sop_pyro = hou.nodeType("Sop/pyrosolver").instances()
+
+        if len(sop_pyro)>0:
+            print("SOP pyrosolver detected")
+            __sop_node__ = sop_pyro[0]
+            __sop_pyro_solver__ = sop_pyro[0]
+        else:
+            print("DOP pyrosolver detected")
+            for child in sop_pyro[0].children():
+                if child.type().name() == "pyrosolver_sparse":
+                    __sop_node__ = child
+                    break
+
 
 def create_sop_upres_node(sop_node):
 
@@ -213,8 +202,7 @@ def create_sop_upres_node(sop_node):
     upres_sop_node.setPosition((pos[0]+4, pos[1]))
     upres_sop_node.setName(sop_node.name()+"_upres")
 
-    upres_sop_node.allowEditingOfContents()
-    upres_sop_node.setColor(hou.Color(1, 2, 0))
+    unlock(upres_sop_node)
 
     __upres_sop_node__ = upres_sop_node
 
@@ -255,6 +243,46 @@ def bypassNodes(sparsePyro):
         if i.name() in bypassedNodes:
             i.bypass(1)
 
+# allow editing of content and set color
+def unlock(node):
+    node.allowEditingOfContents()
+    node.setColor(hou.Color((1,0,0)))
+
+
+# create upres node and unlock
+def createGasUpres():
+
+    global __gas_upres__
+
+    gas_upres = __pyro_solver__.parent().createNode("gasupres::2.0")
+    unlock(gas_upres)
+    __gas_upres__ = gas_upres
+
+def cleanupGasupresSolver(gasupres):
+
+    # fixing some gasUpres default config issues
+    #
+
+    # disable lowres fuel
+    gasupres.parm("enablesolver3/enable").deleteAllKeyframes()
+    # set borders to constant (no interpolation)
+    n = ['lowrestemperature','lowresdensity','lowresvel']
+    for i in n: gasupres.node(i).parm("border").set(0)
+    # remove lowresvel from list and set type to "scalar"
+    n.pop()
+    for i in n: gasupres.node(i).parm("rank").set(0)
+    # fix lowresdensity's data name
+    gasupres.parm("add_lowresdensity/datapath").set("lowresdensity")
+    # disable rest regen
+    gasupres.parm("autoregenrest").set(0)
+    # set timescale to 1
+    gasupres.parm("import_low_res_time").set(0)
+
+
+
+    # set lowres path to be the second input of the solver
+    #gasupres.parm("lowressoppath").set("`opinputpath('.',1)`")
+
 # -----------------------------------------------------------------------------
 
 __upres_sop_node__ = ''
@@ -263,16 +291,32 @@ __dopnet__ = ''
 __pyro_solver__ = ''
 __upres_ui_node__ = ''
 __sop_node__ = ''
+__gas_upres__ = ''
 
 def main():
+
     # delete previous upres nodes (for dev/testing)
     deleteAllUpresNodes()
+
+    # auto detect pyrosolver node or use selection if multiple found
     get_pyro_nodes()
+
+    # no pyro node found > exit
+    if __sop_node__ =='': return
+
+    # duplicate SOP network (upres)
     create_sop_upres_node(__sop_node__)
+
     # unlock pyro and solver nodes
-    __pyro_solver__.allowEditingOfContents()
-    __pyro_solver__.node("solver").allowEditingOfContents()
+    unlock(__pyro_solver__)
+    unlock(__pyro_solver__.node("solver"))
+
+    # disable nodes not needed for upres
     bypassNodes(__pyro_solver__)
+
+    # create gasUpres Solver node and fix some issues
+    createGasUpres()
+    cleanupGasupresSolver(__gas_upres__)
 
 if __name__ == "__main__":
     main()
