@@ -295,6 +295,7 @@ __gas_upres__ = ''
 
 def main():
 
+    print("BOB")
     # delete previous upres nodes (for dev/testing)
     deleteAllUpresNodes()
 
@@ -320,6 +321,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+class sparsePyroUpres:
+
+    def __init__(self,node):
+        self.node = node
+        print("node : ",self.node)
+
+
+
 
 # --------------------------------------------------------------------------
 
