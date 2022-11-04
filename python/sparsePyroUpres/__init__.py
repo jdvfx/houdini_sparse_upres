@@ -254,11 +254,13 @@ class sparsePyroUpres:
         sparsePyro = self.sop_pyro_solver_node
 
         upresGroup = upresNode.parmTemplateGroup()
+        print(">> ",upresGroup)
         # copy upres folders to sparse
         l = ['Simulation','Shape','Advanced']
         upresFolders=[]
         for i in l:
             folder = upresGroup.findFolder(i)
+            print("folder : " , folder)
             folder.setLabel("Upres "+i)
             upresFolders.append(folder)
         sparseGroup = sparsePyro.parmTemplateGroup()
@@ -281,7 +283,7 @@ class sparsePyroUpres:
         # remove duplicates
         usedParmNames = list(set(usedParmNames))
 
-        print("used parm names",usedParmNames)
+        # print("used parm names",usedParmNames)
 
         # rename upres parm if in sparse
         upresGroup = self.gas_upres.parmTemplateGroup()
