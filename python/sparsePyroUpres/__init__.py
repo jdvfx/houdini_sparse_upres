@@ -214,49 +214,9 @@ def create_sop_upres_node(sop_node):
 
     __pyro_solver__ = upres_sop_node.node(solverpath)
 
-def bypassNodes(sparsePyro):
-    # list of nodes to bypass (created from selection)
-    bypassedNodes = [
-        'MOTION_OPERATORS', 'DISTURBANCE', 'FORCES', 'SHREDDING', 'TURBULENCE',
-        'add_turbulence', 'disturb_vel', 'shred_vel', 'temp_diffusion',
-        'TEMPERATURE', 'temp_cooling', 'scaled_external', 'absolute_external',
-        'FORCES_2', 'buoyancy', 'viscosity', 'project', 'reset_collision',
-        'reset_collisionvel', 'build_collision_mask', 'IOP', 'reset',
-        'collision_velocities', 'collision_feedback', 'COLLISION_MASK',
-        'CORRECT_IN_COLLISIONS', 'PRESSURE_PROJECTION', 'hourglass_filter',
-        'HOURGLASS', 'VISUALIZE_HF', 'create_temp_div', 'hg_f_vis',
-        'reset_temp_div', 'CLEANUP', 'reset_divergence', 'VELOCITY_ADVECTION',
-        'ADVECTION_REFLECTION_DOUBLE', 'advect_vel', 'create_temp_vel2',
-        'copy_preproj', 'ADVECTION_REFLECTION_SINGLE', 'reflect',
-        'advect_temp_vel', 'copy_to_vel', 'do_reflect', 'advect_vel_normal',
-        'update_pass', 'clear_temp_vel', 'SAVE_PREPROJ', 'minimal_solve_2',
-        'ADVECTION_REFLECTION', 'minimal_solve_3', 'minimal_solve_4_FORCES',
-        'minimal_solve_5', 'minimal_solve_6', 'minimal_solve_7',
-        'minimal_solve_8', 'PP_NORMAL', 'project_minimal', 'match_speed',
-        'calculate_speed', 'minimal_solve_10', 'enable_speed'
-    ]
-    solver = sparsePyro.node("solver")
-    for i in sparsePyro.children():
-        if i.name() in bypassedNodes:
-            i.bypass(1)
-    for i in solver.children():
-        if i.name() in bypassedNodes:
-            i.bypass(1)
-
-# allow editing of content and set color
-def unlock(node):
-    node.allowEditingOfContents()
-    node.setColor(hou.Color((1,0,0)))
 
 
-# create upres node and unlock
-def createGasUpres():
 
-    global __gas_upres__
-
-    gas_upres = __pyro_solver__.parent().createNode("gasupres::2.0")
-    unlock(gas_upres)
-    __gas_upres__ = gas_upres
 
 def cleanupGasupresSolver(gasupres):
 
@@ -293,41 +253,114 @@ __upres_ui_node__ = ''
 __sop_node__ = ''
 __gas_upres__ = ''
 
-def main():
+# def main():
+#
+#     print("BOB")
+#     # delete previous upres nodes (for dev/testing)
+#     deleteAllUpresNodes()
+#
+#     # auto detect pyrosolver node or use selection if multiple found
+#     get_pyro_nodes()
+#
+#     # no pyro node found > exit
+#     if __sop_node__ =='': return
+#
+#     # duplicate SOP network (upres)
+#     create_sop_upres_node(__sop_node__)
+#
+#
+#
+#     # create gasUpres Solver node and fix some issues
+#     cleanupGasupresSolver(__gas_upres__)
+#
+#
+#
+# if __name__ == "__main__":
+#     main()
 
-    print("BOB")
-    # delete previous upres nodes (for dev/testing)
-    deleteAllUpresNodes()
 
-    # auto detect pyrosolver node or use selection if multiple found
-    get_pyro_nodes()
-
-    # no pyro node found > exit
-    if __sop_node__ =='': return
-
-    # duplicate SOP network (upres)
-    create_sop_upres_node(__sop_node__)
-
-    # unlock pyro and solver nodes
-    unlock(__pyro_solver__)
-    unlock(__pyro_solver__.node("solver"))
-
-    # disable nodes not needed for upres
-    bypassNodes(__pyro_solver__)
-
-    # create gasUpres Solver node and fix some issues
-    createGasUpres()
-    cleanupGasupresSolver(__gas_upres__)
-
-if __name__ == "__main__":
-    main()
 
 
 class sparsePyroUpres:
-
     def __init__(self,node):
         self.node = node
-        print("node : ",self.node)
+        #
+        self.get_pyro_solver()
+        self.create_sop_upres_node()
+        self.bypassNodes()
+        self.createGasUpres()
+
+    # create upres node and unlock
+    def createGasUpres(self):
+        gas_upres = self.pyro_solver.parent().createNode("gasupres::2.0")
+        self.unlock(gas_upres)
+        self.gas_upres = gas_upres
+
+    # allow editing of content and set color
+    def unlock(self,node):
+        node.allowEditingOfContents()
+        node.setColor(hou.Color((1,0,0)))
+
+
+    def get_pyro_solver(self):
+        # look for SOP pyrosolver node type only
+        sop_pyrosolver_instances = hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances()
+        #
+        if len(sop_pyrosolver_instances)==1:
+            self.sop_pyro_solver_node = sop_pyrosolver_instances[0]
+        else:
+            return "No Sop PyroSolver node found"
+
+    def create_sop_upres_node(self):
+        #
+        sop_pyro = self.sop_pyro_solver_node
+        nodescopy = hou.copyNodesTo((sop_pyro,), sop_pyro.parent())
+        self.upres_node = nodescopy[0]
+        #
+        pos = sop_pyro.position()
+        self.upres_node.setPosition((pos[0]+4, pos[1]))
+        self.upres_node.setName(sop_pyro.name()+"_upres")
+
+        # unlock Solver node and parent levels
+        self.dopnet = self.upres_node.node("dopnet1")
+        self.pyro_solver = self.dopnet.node("pyro_solver")
+        self.solver = self.pyro_solver.node("solver")
+
+        self.unlock(self.upres_node)
+        self.unlock(self.upres_node)
+        self.unlock(self.dopnet)
+        self.unlock(self.pyro_solver)
+        self.unlock(self.solver)
+
+
+    def bypassNodes(self):
+        # list of nodes to bypass (created from selection)
+        bypassedNodes = [
+            'MOTION_OPERATORS', 'DISTURBANCE', 'FORCES', 'SHREDDING', 'TURBULENCE',
+            'add_turbulence', 'disturb_vel', 'shred_vel', 'temp_diffusion',
+            'TEMPERATURE', 'temp_cooling', 'scaled_external', 'absolute_external',
+            'FORCES_2', 'buoyancy', 'viscosity', 'project', 'reset_collision',
+            'reset_collisionvel', 'build_collision_mask', 'IOP', 'reset',
+            'collision_velocities', 'collision_feedback', 'COLLISION_MASK',
+            'CORRECT_IN_COLLISIONS', 'PRESSURE_PROJECTION', 'hourglass_filter',
+            'HOURGLASS', 'VISUALIZE_HF', 'create_temp_div', 'hg_f_vis',
+            'reset_temp_div', 'CLEANUP', 'reset_divergence', 'VELOCITY_ADVECTION',
+            'ADVECTION_REFLECTION_DOUBLE', 'advect_vel', 'create_temp_vel2',
+            'copy_preproj', 'ADVECTION_REFLECTION_SINGLE', 'reflect',
+            'advect_temp_vel', 'copy_to_vel', 'do_reflect', 'advect_vel_normal',
+            'update_pass', 'clear_temp_vel', 'SAVE_PREPROJ', 'minimal_solve_2',
+            'ADVECTION_REFLECTION', 'minimal_solve_3', 'minimal_solve_4_FORCES',
+            'minimal_solve_5', 'minimal_solve_6', 'minimal_solve_7',
+            'minimal_solve_8', 'PP_NORMAL', 'project_minimal', 'match_speed',
+            'calculate_speed', 'minimal_solve_10', 'enable_speed'
+        ]
+        for i in self.pyro_solver.children():
+            if i.name() in bypassedNodes:
+                i.bypass(1)
+        for i in self.solver.children():
+            if i.name() in bypassedNodes:
+                i.bypass(1)
+
 
 
 
