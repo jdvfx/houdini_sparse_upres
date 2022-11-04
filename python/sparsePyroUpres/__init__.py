@@ -49,59 +49,32 @@ def copyParmsFolders(sourceNode,destinationNode,parmFolders):
 
         n.setParmTemplateGroup(ptg)
 
-def deleteAllUpresNodes():
-    for i in hou.nodeType("Sop/pyrosolver").instances():
-        if i.name().endswith("upres"):
-            i.destroy()
-    for i in hou.nodeType("Sop/dopnet").instances():
-        if i.name().endswith("upres"):
-            i.destroy()
 
-def getSopPyroSolver():
-    # if only one sparse_pyro node, return it, else use node selection
-    sparsePyro=''
-    sparsePyroNodes=hou.nodeType("Sop/pyrosolver").instances()
-    if len(sparsePyroNodes)==1:
-        sparsePyro=sparsePyroNodes[0]
-    else:
-        selectedNodes = hou.selectedNodes()
-        for i in selectedNodes:
-          if i.type().name()=='pyrosolver':
-            sparsePyro=i
-    if sparsePyro=='':
-        hou.ui.displayMessage("Select the Sparse Pyro node to upres (Dops)",buttons=("OK",))
-    else:
-        pos = sparsePyro.position()
-        n = sparsePyro.name()
-        a = hou.copyNodesTo((sparsePyro,),sparsePyro.parent())
-        a[0].setPosition((pos[0]+4,pos[1]))
-        a[0].setName(n+"_upres")
-        sparsePyro=a[0]
-    return sparsePyro
+# def getSopPyroSolver():
+#     # if only one sparse_pyro node, return it, else use node selection
+#     sparsePyro=''
+#     sparsePyroNodes=hou.nodeType("Sop/pyrosolver").instances()
+#     if len(sparsePyroNodes)==1:
+#         sparsePyro=sparsePyroNodes[0]
+#     else:
+#         selectedNodes = hou.selectedNodes()
+#         for i in selectedNodes:
+#           if i.type().name()=='pyrosolver':
+#             sparsePyro=i
+#     if sparsePyro=='':
+#         hou.ui.displayMessage("Select the Sparse Pyro node to upres (Dops)",buttons=("OK",))
+#     else:
+#         pos = sparsePyro.position()
+#         n = sparsePyro.name()
+#         a = hou.copyNodesTo((sparsePyro,),sparsePyro.parent())
+#         a[0].setPosition((pos[0]+4,pos[1]))
+#         a[0].setName(n+"_upres")
+#         sparsePyro=a[0]
+#     return sparsePyro
 
 
 
 
-def renameDuplicateParms(upresNode,sparsePyroNode,sopPyroSolver):
-    # add sparsePyro and sopPyro parms in list
-    usedParmNames=[]
-    for i in sparsePyroNode.parmTemplateGroup().entriesWithoutFolders():
-        usedParmNames.append(i.name())
-    for i in sopPyroSolver.parmTemplateGroup().entriesWithoutFolders():
-        usedParmNames.append(i.name())
-    usedParmNames = list(set(usedParmNames))
-
-    # rename upres parm if in sparse
-    upresGroup = upresNode.parmTemplateGroup()
-    upresEntries=upresGroup.entriesWithoutFolders()
-    for i in upresEntries:
-        n = i.name()
-        if n in usedParmNames:
-            parmTemplate = upresGroup.find(n)
-            parmTemplate.setName(n+"_")
-            upresGroup.replace(n,parmTemplate)
-    # update upres template group
-    upresNode.setParmTemplateGroup(upresGroup)
 
 def copyParmFolders(upresNode,sparsePyro):
     upresGroup = upresNode.parmTemplateGroup()
@@ -218,25 +191,6 @@ def create_sop_upres_node(sop_node):
 
 
 
-def cleanupGasupresSolver(gasupres):
-
-    # fixing some gasUpres default config issues
-    #
-
-    # disable lowres fuel
-    gasupres.parm("enablesolver3/enable").deleteAllKeyframes()
-    # set borders to constant (no interpolation)
-    n = ['lowrestemperature','lowresdensity','lowresvel']
-    for i in n: gasupres.node(i).parm("border").set(0)
-    # remove lowresvel from list and set type to "scalar"
-    n.pop()
-    for i in n: gasupres.node(i).parm("rank").set(0)
-    # fix lowresdensity's data name
-    gasupres.parm("add_lowresdensity/datapath").set("lowresdensity")
-    # disable rest regen
-    gasupres.parm("autoregenrest").set(0)
-    # set timescale to 1
-    gasupres.parm("import_low_res_time").set(0)
 
 
 
@@ -285,10 +239,103 @@ class sparsePyroUpres:
     def __init__(self,node):
         self.node = node
         #
+        self.deleteAllUpresNodes()
         self.get_pyro_solver()
         self.create_sop_upres_node()
         self.bypassNodes()
         self.createGasUpres()
+        self.cleanupGasupresSolver()
+        self.renameDuplicateParms()
+        # self.copyParmFolders()
+
+    def copyParmFolders(self):
+
+        upresNode = self.gas_upres
+        sparsePyro = self.sop_pyro_solver_node
+
+        upresGroup = upresNode.parmTemplateGroup()
+        # copy upres folders to sparse
+        l = ['Simulation','Shape','Advanced']
+        upresFolders=[]
+        for i in l:
+            folder = upresGroup.findFolder(i)
+            folder.setLabel("Upres "+i)
+            upresFolders.append(folder)
+        sparseGroup = sparsePyro.parmTemplateGroup()
+        # add folders to sparse
+        for i in upresFolders:
+            sparseGroup.append(i)
+        sparsePyro.setParmTemplateGroup(sparseGroup)
+
+
+    def renameDuplicateParms(self):
+
+        # add sparsePyro and sopPyro parms in list
+        usedParmNames=[]
+        for i in self.gas_upres.parmTemplateGroup().entriesWithoutFolders():
+            usedParmNames.append(i.name())
+
+        for i in self.sop_pyro_solver_node.parmTemplateGroup().entriesWithoutFolders():
+            usedParmNames.append(i.name())
+
+        # remove duplicates
+        usedParmNames = list(set(usedParmNames))
+
+        print("used parm names",usedParmNames)
+
+        # rename upres parm if in sparse
+        upresGroup = self.gas_upres.parmTemplateGroup()
+        upresEntries=upresGroup.entriesWithoutFolders()
+        for i in upresEntries:
+            n = i.name()
+            if n in usedParmNames:
+                parmTemplate = upresGroup.find(n)
+                parmTemplate.setName(n+"_GU")
+                upresGroup.replace(n,parmTemplate)
+        # update upres template group
+        self.gas_upres.setParmTemplateGroup(upresGroup)
+
+
+    # delete previously created sparse pyro upres nodes
+    def deleteAllUpresNodes(self):
+        for i in hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances():
+            if i.name().endswith("upres"):
+                i.destroy()
+
+
+    def hilight(self,node):
+        node.setColor(hou.Color((1,0,0)))
+
+        
+    # fixing some gasUpres default config issues
+    def cleanupGasupresSolver(self):
+
+        # disable lowres fuel
+        lowres_fuel = self.gas_upres.node("enablesolver3")
+        lowres_fuel.parm("enable").deleteAllKeyframes()
+        self.hilight(lowres_fuel)
+
+        # set borders to constant (no interpolation)
+        lowres_fields = ['lowrestemperature','lowresdensity','lowresvel']
+        for lowres_field in lowres_fields: 
+            field_node = self.gas_upres.node(lowres_field)
+            field_node.parm("border").set(0)
+            self.hilight(field_node)
+
+        # remove lowresvel from list and set type to "scalar"
+        lowres_fields.pop()
+        for lowres_field in lowres_fields:
+            self.gas_upres.node(lowres_field).parm("rank").set(0)
+
+        # fix lowresdensity's data name
+        lowres_density = self.gas_upres.node("add_lowresdensity")
+        lowres_density.parm("datapath").set("lowresdensity")
+        self.hilight(lowres_density)
+
+        # disable rest regen
+        self.gas_upres.parm("autoregenrest").set(0)
+        # set timescale to 1
+        self.gas_upres.parm("import_low_res_time").set(0)
 
     # create upres node and unlock
     def createGasUpres(self):
