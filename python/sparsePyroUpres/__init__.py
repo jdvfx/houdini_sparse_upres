@@ -1,6 +1,234 @@
-##!/usr/bin/env python3
 
+##!/usr/bin/env python3
 import hou
+
+class sparsePyroUpres:
+    def __init__(self,node):
+        self.node = node
+        #
+        self.deleteAllUpresNodes()
+        self.get_pyro_solver()
+        self.create_sop_upres_node()
+        self.bypassNodes()
+        self.createGasUpres()
+        self.cleanupGasupresSolver()
+        self.renameDuplicateParms()
+        # self.copyParmFolders()
+
+    def copyParmFolders(self):
+
+        upresNode = self.gas_upres
+        sparsePyro = self.sop_pyro_solver_node
+
+        upresGroup = upresNode.parmTemplateGroup()
+        print(">> ",upresGroup)
+        # copy upres folders to sparse
+        l = ['Simulation','Shape','Advanced']
+        upresFolders=[]
+        for i in l:
+            folder = upresGroup.findFolder(i)
+            print("folder : " , folder)
+            folder.setLabel("Upres "+i)
+            upresFolders.append(folder)
+        sparseGroup = sparsePyro.parmTemplateGroup()
+        # add folders to sparse
+        for i in upresFolders:
+            sparseGroup.append(i)
+        sparsePyro.setParmTemplateGroup(sparseGroup,rename_conflicting_parms=True)
+
+
+    def renameDuplicateParms(self):
+
+        # add sparsePyro and sopPyro parms in list
+        usedParmNames=[]
+        for i in self.gas_upres.parmTemplateGroup().entriesWithoutFolders():
+            usedParmNames.append(i.name())
+
+        for i in self.sop_pyro_solver_node.parmTemplateGroup().entriesWithoutFolders():
+            usedParmNames.append(i.name())
+
+        # remove duplicates
+        usedParmNames = list(set(usedParmNames))
+
+        # print("used parm names",usedParmNames)
+
+        # TO DO 
+        # find all the parms in ['Simulation','Shape','Advanced']
+        # rename parms that have duplicates on SOP pyrosolver
+        # keep track of those new names and copy everything back to SOP level
+        # need an array of folder/parm_name
+        
+
+        # rename upres parm if in sparse
+        upresGroup = self.gas_upres.parmTemplateGroup()
+        upresEntries=upresGroup.entriesWithoutFolders()
+        for i in upresEntries:
+            n = i.name()
+            if n in usedParmNames:
+                parmTemplate = upresGroup.find(n)
+                parmTemplate.setName(n+"_GU")
+                upresGroup.replace(n,parmTemplate)
+        # update upres template group
+        self.gas_upres.setParmTemplateGroup(upresGroup)
+
+
+    # delete previously created sparse pyro upres nodes
+    def deleteAllUpresNodes(self):
+        for i in hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances():
+            if i.name().endswith("upres"):
+                i.destroy()
+
+
+    def hilight(self,node):
+        node.setColor(hou.Color((1,0,0)))
+
+        
+    # fixing some gasUpres default config issues
+    def cleanupGasupresSolver(self):
+
+        # disable lowres fuel
+        lowres_fuel = self.gas_upres.node("enablesolver3")
+        lowres_fuel.parm("enable").deleteAllKeyframes()
+        self.hilight(lowres_fuel)
+
+        # set borders to constant (no interpolation)
+        lowres_fields = ['lowrestemperature','lowresdensity','lowresvel']
+        for lowres_field in lowres_fields: 
+            field_node = self.gas_upres.node(lowres_field)
+            field_node.parm("border").set(0)
+            self.hilight(field_node)
+
+        # remove lowresvel from list and set type to "scalar"
+        lowres_fields.pop()
+        for lowres_field in lowres_fields:
+            self.gas_upres.node(lowres_field).parm("rank").set(0)
+
+        # fix lowresdensity's data name
+        lowres_density = self.gas_upres.node("add_lowresdensity")
+        lowres_density.parm("datapath").set("lowresdensity")
+        self.hilight(lowres_density)
+
+        # disable rest regen
+        self.gas_upres.parm("autoregenrest").set(0)
+        # set timescale to 1
+        self.gas_upres.parm("import_low_res_time").set(0)
+
+    # create upres node and unlock
+    def createGasUpres(self):
+        gas_upres = self.pyro_solver.parent().createNode("gasupres::2.0")
+        self.unlock(gas_upres)
+        self.gas_upres = gas_upres
+
+    # allow editing of content and set color
+    def unlock(self,node):
+        node.allowEditingOfContents()
+        node.setColor(hou.Color((1,0,0)))
+
+
+    def get_pyro_solver(self):
+        # look for SOP pyrosolver node type only
+        sop_pyrosolver_instances = hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances()
+        #
+        if len(sop_pyrosolver_instances)==1:
+            self.sop_pyro_solver_node = sop_pyrosolver_instances[0]
+        else:
+            return "No Sop PyroSolver node found"
+
+    def create_sop_upres_node(self):
+        #
+        sop_pyro = self.sop_pyro_solver_node
+        nodescopy = hou.copyNodesTo((sop_pyro,), sop_pyro.parent())
+        self.upres_node = nodescopy[0]
+        #
+        pos = sop_pyro.position()
+        self.upres_node.setPosition((pos[0]+4, pos[1]))
+        self.upres_node.setName(sop_pyro.name()+"_upres")
+
+        # unlock Solver node and parent levels
+        self.dopnet = self.upres_node.node("dopnet1")
+        self.pyro_solver = self.dopnet.node("pyro_solver")
+        self.solver = self.pyro_solver.node("solver")
+
+        self.unlock(self.upres_node)
+        self.unlock(self.upres_node)
+        self.unlock(self.dopnet)
+        self.unlock(self.pyro_solver)
+        self.unlock(self.solver)
+
+
+    def bypassNodes(self):
+        # list of nodes to bypass (created from selection)
+        bypassedNodes = [
+            'MOTION_OPERATORS', 'DISTURBANCE', 'FORCES', 'SHREDDING', 'TURBULENCE',
+            'add_turbulence', 'disturb_vel', 'shred_vel', 'temp_diffusion',
+            'TEMPERATURE', 'temp_cooling', 'scaled_external', 'absolute_external',
+            'FORCES_2', 'buoyancy', 'viscosity', 'project', 'reset_collision',
+            'reset_collisionvel', 'build_collision_mask', 'IOP', 'reset',
+            'collision_velocities', 'collision_feedback', 'COLLISION_MASK',
+            'CORRECT_IN_COLLISIONS', 'PRESSURE_PROJECTION', 'hourglass_filter',
+            'HOURGLASS', 'VISUALIZE_HF', 'create_temp_div', 'hg_f_vis',
+            'reset_temp_div', 'CLEANUP', 'reset_divergence', 'VELOCITY_ADVECTION',
+            'ADVECTION_REFLECTION_DOUBLE', 'advect_vel', 'create_temp_vel2',
+            'copy_preproj', 'ADVECTION_REFLECTION_SINGLE', 'reflect',
+            'advect_temp_vel', 'copy_to_vel', 'do_reflect', 'advect_vel_normal',
+            'update_pass', 'clear_temp_vel', 'SAVE_PREPROJ', 'minimal_solve_2',
+            'ADVECTION_REFLECTION', 'minimal_solve_3', 'minimal_solve_4_FORCES',
+            'minimal_solve_5', 'minimal_solve_6', 'minimal_solve_7',
+            'minimal_solve_8', 'PP_NORMAL', 'project_minimal', 'match_speed',
+            'calculate_speed', 'minimal_solve_10', 'enable_speed'
+        ]
+        for i in self.pyro_solver.children():
+            if i.name() in bypassedNodes:
+                i.bypass(1)
+        for i in self.solver.children():
+            if i.name() in bypassedNodes:
+                i.bypass(1)
+
+
+
+
+
+# --------------------------------------------------------------------------
+
+# case 1 (SOP)
+# SOP pyrosolver >>> "sopPyroSolver" !upresUI! !SOP_node!
+# + dopnet >>> "dopnet"
+#   + pyro_solver [pyro solver (sparse)] >>> pyroSolver
+#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
+
+# case 2 (DOP)
+# dopnet (in SOPs) !SOP_node!
+#   + pyro_solver [pyro solver (sparse)] !upresUI!
+#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
+
+# --------------------------------------------------------------------------
+
+# sopPyroSolver.allowEditingOfContents()
+# sparsePyro = sopPyroSolver.node("dopnet1/pyro_solver")
+# solver = sparsePyro.node("solver")
+# sparsePyro.allowEditingOfContents()
+# solver.allowEditingOfContents()
+# bypassNodes(sparsePyro)
+# upresNode = createUpresNode(sparsePyro)
+# cleanupUpresSolver(upresNode)
+# renameDuplicateParms(upresNode,sparsePyro,sopPyroSolver)
+# copyParmFolders(upresNode,sparsePyro)
+# copyUpresNodes(upresNode,sparsePyro)
+# parmFolders = ('Upres Simulation','Upres Shape','Upres Advanced')
+# copyParmsFolders(sparsePyro,sopPyroSolver,parmFolders)
+# upresUIcleanup(sopPyroSolver)
+
+
+# --------------------------------------------------------------------------
+# TO DO:
+# - PEP8/utf8 (check python3 header)
+# - get SOP_Pyro or DOP_Pyro
+# - make code less monolithic
+# - should work for SOP pyrosolver and DOP pyrosolver (inside SOP) - no /OBJ/DOP/pyrosolver BS!
+#
+# --------------------------------------------------------------------------
+
+
 
 # Houdini Sparse Pyro Upres prototype
 #
@@ -231,228 +459,6 @@ __gas_upres__ = ''
 #
 # if __name__ == "__main__":
 #     main()
-
-
-
-
-class sparsePyroUpres:
-    def __init__(self,node):
-        self.node = node
-        #
-        self.deleteAllUpresNodes()
-        self.get_pyro_solver()
-        self.create_sop_upres_node()
-        self.bypassNodes()
-        self.createGasUpres()
-        self.cleanupGasupresSolver()
-        self.renameDuplicateParms()
-        # self.copyParmFolders()
-
-    def copyParmFolders(self):
-
-        upresNode = self.gas_upres
-        sparsePyro = self.sop_pyro_solver_node
-
-        upresGroup = upresNode.parmTemplateGroup()
-        print(">> ",upresGroup)
-        # copy upres folders to sparse
-        l = ['Simulation','Shape','Advanced']
-        upresFolders=[]
-        for i in l:
-            folder = upresGroup.findFolder(i)
-            print("folder : " , folder)
-            folder.setLabel("Upres "+i)
-            upresFolders.append(folder)
-        sparseGroup = sparsePyro.parmTemplateGroup()
-        # add folders to sparse
-        for i in upresFolders:
-            sparseGroup.append(i)
-        sparsePyro.setParmTemplateGroup(sparseGroup)
-
-
-    def renameDuplicateParms(self):
-
-        # add sparsePyro and sopPyro parms in list
-        usedParmNames=[]
-        for i in self.gas_upres.parmTemplateGroup().entriesWithoutFolders():
-            usedParmNames.append(i.name())
-
-        for i in self.sop_pyro_solver_node.parmTemplateGroup().entriesWithoutFolders():
-            usedParmNames.append(i.name())
-
-        # remove duplicates
-        usedParmNames = list(set(usedParmNames))
-
-        # print("used parm names",usedParmNames)
-
-        # rename upres parm if in sparse
-        upresGroup = self.gas_upres.parmTemplateGroup()
-        upresEntries=upresGroup.entriesWithoutFolders()
-        for i in upresEntries:
-            n = i.name()
-            if n in usedParmNames:
-                parmTemplate = upresGroup.find(n)
-                parmTemplate.setName(n+"_GU")
-                upresGroup.replace(n,parmTemplate)
-        # update upres template group
-        self.gas_upres.setParmTemplateGroup(upresGroup)
-
-
-    # delete previously created sparse pyro upres nodes
-    def deleteAllUpresNodes(self):
-        for i in hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances():
-            if i.name().endswith("upres"):
-                i.destroy()
-
-
-    def hilight(self,node):
-        node.setColor(hou.Color((1,0,0)))
-
-        
-    # fixing some gasUpres default config issues
-    def cleanupGasupresSolver(self):
-
-        # disable lowres fuel
-        lowres_fuel = self.gas_upres.node("enablesolver3")
-        lowres_fuel.parm("enable").deleteAllKeyframes()
-        self.hilight(lowres_fuel)
-
-        # set borders to constant (no interpolation)
-        lowres_fields = ['lowrestemperature','lowresdensity','lowresvel']
-        for lowres_field in lowres_fields: 
-            field_node = self.gas_upres.node(lowres_field)
-            field_node.parm("border").set(0)
-            self.hilight(field_node)
-
-        # remove lowresvel from list and set type to "scalar"
-        lowres_fields.pop()
-        for lowres_field in lowres_fields:
-            self.gas_upres.node(lowres_field).parm("rank").set(0)
-
-        # fix lowresdensity's data name
-        lowres_density = self.gas_upres.node("add_lowresdensity")
-        lowres_density.parm("datapath").set("lowresdensity")
-        self.hilight(lowres_density)
-
-        # disable rest regen
-        self.gas_upres.parm("autoregenrest").set(0)
-        # set timescale to 1
-        self.gas_upres.parm("import_low_res_time").set(0)
-
-    # create upres node and unlock
-    def createGasUpres(self):
-        gas_upres = self.pyro_solver.parent().createNode("gasupres::2.0")
-        self.unlock(gas_upres)
-        self.gas_upres = gas_upres
-
-    # allow editing of content and set color
-    def unlock(self,node):
-        node.allowEditingOfContents()
-        node.setColor(hou.Color((1,0,0)))
-
-
-    def get_pyro_solver(self):
-        # look for SOP pyrosolver node type only
-        sop_pyrosolver_instances = hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances()
-        #
-        if len(sop_pyrosolver_instances)==1:
-            self.sop_pyro_solver_node = sop_pyrosolver_instances[0]
-        else:
-            return "No Sop PyroSolver node found"
-
-    def create_sop_upres_node(self):
-        #
-        sop_pyro = self.sop_pyro_solver_node
-        nodescopy = hou.copyNodesTo((sop_pyro,), sop_pyro.parent())
-        self.upres_node = nodescopy[0]
-        #
-        pos = sop_pyro.position()
-        self.upres_node.setPosition((pos[0]+4, pos[1]))
-        self.upres_node.setName(sop_pyro.name()+"_upres")
-
-        # unlock Solver node and parent levels
-        self.dopnet = self.upres_node.node("dopnet1")
-        self.pyro_solver = self.dopnet.node("pyro_solver")
-        self.solver = self.pyro_solver.node("solver")
-
-        self.unlock(self.upres_node)
-        self.unlock(self.upres_node)
-        self.unlock(self.dopnet)
-        self.unlock(self.pyro_solver)
-        self.unlock(self.solver)
-
-
-    def bypassNodes(self):
-        # list of nodes to bypass (created from selection)
-        bypassedNodes = [
-            'MOTION_OPERATORS', 'DISTURBANCE', 'FORCES', 'SHREDDING', 'TURBULENCE',
-            'add_turbulence', 'disturb_vel', 'shred_vel', 'temp_diffusion',
-            'TEMPERATURE', 'temp_cooling', 'scaled_external', 'absolute_external',
-            'FORCES_2', 'buoyancy', 'viscosity', 'project', 'reset_collision',
-            'reset_collisionvel', 'build_collision_mask', 'IOP', 'reset',
-            'collision_velocities', 'collision_feedback', 'COLLISION_MASK',
-            'CORRECT_IN_COLLISIONS', 'PRESSURE_PROJECTION', 'hourglass_filter',
-            'HOURGLASS', 'VISUALIZE_HF', 'create_temp_div', 'hg_f_vis',
-            'reset_temp_div', 'CLEANUP', 'reset_divergence', 'VELOCITY_ADVECTION',
-            'ADVECTION_REFLECTION_DOUBLE', 'advect_vel', 'create_temp_vel2',
-            'copy_preproj', 'ADVECTION_REFLECTION_SINGLE', 'reflect',
-            'advect_temp_vel', 'copy_to_vel', 'do_reflect', 'advect_vel_normal',
-            'update_pass', 'clear_temp_vel', 'SAVE_PREPROJ', 'minimal_solve_2',
-            'ADVECTION_REFLECTION', 'minimal_solve_3', 'minimal_solve_4_FORCES',
-            'minimal_solve_5', 'minimal_solve_6', 'minimal_solve_7',
-            'minimal_solve_8', 'PP_NORMAL', 'project_minimal', 'match_speed',
-            'calculate_speed', 'minimal_solve_10', 'enable_speed'
-        ]
-        for i in self.pyro_solver.children():
-            if i.name() in bypassedNodes:
-                i.bypass(1)
-        for i in self.solver.children():
-            if i.name() in bypassedNodes:
-                i.bypass(1)
-
-
-
-
-
-# --------------------------------------------------------------------------
-
-# case 1 (SOP)
-# SOP pyrosolver >>> "sopPyroSolver" !upresUI! !SOP_node!
-# + dopnet >>> "dopnet"
-#   + pyro_solver [pyro solver (sparse)] >>> pyroSolver
-#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
-
-# case 2 (DOP)
-# dopnet (in SOPs) !SOP_node!
-#   + pyro_solver [pyro solver (sparse)] !upresUI!
-#     + solver [smoke solver (sparse)] >>> smokeSolver --- implied from pyro_solver
-
-# --------------------------------------------------------------------------
-
-# sopPyroSolver.allowEditingOfContents()
-# sparsePyro = sopPyroSolver.node("dopnet1/pyro_solver")
-# solver = sparsePyro.node("solver")
-# sparsePyro.allowEditingOfContents()
-# solver.allowEditingOfContents()
-# bypassNodes(sparsePyro)
-# upresNode = createUpresNode(sparsePyro)
-# cleanupUpresSolver(upresNode)
-# renameDuplicateParms(upresNode,sparsePyro,sopPyroSolver)
-# copyParmFolders(upresNode,sparsePyro)
-# copyUpresNodes(upresNode,sparsePyro)
-# parmFolders = ('Upres Simulation','Upres Shape','Upres Advanced')
-# copyParmsFolders(sparsePyro,sopPyroSolver,parmFolders)
-# upresUIcleanup(sopPyroSolver)
-
-
-# --------------------------------------------------------------------------
-# TO DO:
-# - PEP8/utf8 (check python3 header)
-# - get SOP_Pyro or DOP_Pyro
-# - make code less monolithic
-# - should work for SOP pyrosolver and DOP pyrosolver (inside SOP) - no /OBJ/DOP/pyrosolver BS!
-#
-# --------------------------------------------------------------------------
 
 
 
