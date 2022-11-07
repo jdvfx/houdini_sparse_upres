@@ -14,7 +14,7 @@ class sparsePyroUpres:
         self.createGasUpres()
         self.cleanupGasupresSolver()
         # self.renameDuplicateParms()
-        # self.copyParmFolders()
+        self.copyParmFolders()
         self.copyUpresNodes()
 
     def copyUpresNodes(self):
@@ -49,12 +49,14 @@ class sparsePyroUpres:
     def copyParmFolders(self):
 
         upresNode = self.gas_upres
-        sparsePyro = self.sop_pyro_solver_node
+        sparsePyro = self.solver
+        # sparsePyro = self.sop_pyro_solver_node
 
         upresGroup = upresNode.parmTemplateGroup()
         print(">> ",upresGroup)
         # copy upres folders to sparse
-        l = ['Simulation','Shape','Advanced']
+        # l = ['Simulation','Shape','Advanced']
+        l = ['Shape']
         upresFolders=[]
         for i in l:
             folder = upresGroup.findFolder(i)
@@ -65,6 +67,8 @@ class sparsePyroUpres:
         # add folders to sparse
         for i in upresFolders:
             sparseGroup.append(i)
+
+        #
         sparsePyro.setParmTemplateGroup(sparseGroup,rename_conflicting_parms=True)
 
 
@@ -75,7 +79,7 @@ class sparsePyroUpres:
         for i in self.gas_upres.parmTemplateGroup().entriesWithoutFolders():
             usedParmNames.append(i.name())
 
-        for i in self.sop_pyro_solver_node.parmTemplateGroup().entriesWithoutFolders():
+        for i in self.solver.parmTemplateGroup().entriesWithoutFolders():
             usedParmNames.append(i.name())
 
         # remove duplicates
@@ -96,11 +100,13 @@ class sparsePyroUpres:
         for i in upresEntries:
             n = i.name()
             if n in usedParmNames:
-                parmTemplate = upresGroup.find(n)
-                parmTemplate.setName(n+"_GU")
-                upresGroup.replace(n,parmTemplate)
+                print(">>> " , n)
+                # parmTemplate = upresGroup.find(n)
+                # parmTemplate.setName(n+"_GU")
+                # upresGroup.replace(n,parmTemplate)
+
         # update upres template group
-        self.gas_upres.setParmTemplateGroup(upresGroup)
+        # self.gas_upres.setParmTemplateGroup(upresGroup)
 
 
     # delete previously created sparse pyro upres nodes
