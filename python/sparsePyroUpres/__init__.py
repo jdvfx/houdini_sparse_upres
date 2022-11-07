@@ -1,19 +1,50 @@
 
 ##!/usr/bin/env python3
 import hou
+import re
 
 class sparsePyroUpres:
     def __init__(self,node):
         self.node = node
         #
-        self.deleteAllUpresNodes()
+        # self.deleteAllUpresNodes()
         self.get_pyro_solver()
         self.create_sop_upres_node()
         self.bypassNodes()
         self.createGasUpres()
         self.cleanupGasupresSolver()
-        self.renameDuplicateParms()
+        # self.renameDuplicateParms()
         # self.copyParmFolders()
+        self.copyUpresNodes()
+
+    def copyUpresNodes(self):
+    
+        # remove "vel" from advected fields
+        advect = self.solver.node("advect_fields")
+        fields = advect.parm("field")
+        f = re.sub("vel","",fields.eval())
+        fields.set(f)
+        self.hilight(advect)
+
+        # copy gasUpres nodes to Solver level and connect to merge1
+        merge1 = self.solver.node("merge1")
+        self.hilight(merge1)
+        rootNodes=["SOURCE__LOW_RES_FIELDS","compute_turb","ramp_turbscale","do_rest_autoregen3","primary_noise"]
+
+        for i in rootNodes:
+            networkBox=self.gas_upres.node(i).parentNetworkBox()
+            for j in networkBox.nodes():
+                j.setColor(hou.Color(1,0,0))
+                pos = j.position()
+                j.setPosition((pos[0]-20,pos[1]+50))
+            hou.copyNodesTo(networkBox.nodes(),self.solver)
+
+        # advect_fields as last input of merge1
+        advect = self.solver.node("advect_fields")
+        for input, rootnode in enumerate(rootNodes):
+            rootnode = self.solver.node(rootnode)
+            merge1.setInput(input,rootnode)
+        merge1.setNextInput(advect)
 
     def copyParmFolders(self):
 
@@ -86,10 +117,31 @@ class sparsePyroUpres:
     # fixing some gasUpres default config issues
     def cleanupGasupresSolver(self):
 
-        # disable lowres fuel
-        lowres_fuel = self.gas_upres.node("enablesolver3")
-        lowres_fuel.parm("enable").deleteAllKeyframes()
-        self.hilight(lowres_fuel)
+
+        nodes_to_delete = [
+        "compute_velocity_wavelets","compute_velocity_energy",
+        "energy_to_scale","wavelet_vectorfields","scale_from_wavelets1",
+        "switchsolver3","enablesolver1","lowresfuel","add_lowresfuel",
+        "merge6","enablesolver2","enablesolver3","enablesolver4"
+        ]
+
+        for node in nodes_to_delete:
+            self.gas_upres.node(node).destroy()
+
+        #
+        # switch_to_merge = ["scale_from_curl1","switchsolver11"]
+        # for s in switch_to_merge:
+        #     n = self.gas_upres.node(s)
+        #     inputs = n.inputs()
+        #     output = n.outputs()[0]
+        #     pos = n.position()
+        #     n.destroy()
+        #     merge = self.gas_upres.createNode("merge")
+        #     merge.setPosition(pos)
+        #     for i in inputs:
+        #         merge.setNextInput(i)
+        #     output.setNextInput(merge)
+
 
         # set borders to constant (no interpolation)
         lowres_fields = ['lowrestemperature','lowresdensity','lowresvel']
@@ -115,7 +167,7 @@ class sparsePyroUpres:
 
     # create upres node and unlock
     def createGasUpres(self):
-        gas_upres = self.pyro_solver.parent().createNode("gasupres::2.0")
+        gas_upres = self.solver.createNode("gasupres::2.0")
         self.unlock(gas_upres)
         self.gas_upres = gas_upres
 
@@ -126,6 +178,9 @@ class sparsePyroUpres:
 
 
     def get_pyro_solver(self):
+        self.sop_pyro_solver_node = hou.node('/obj/geo2/lowres1')
+        print(self.sop_pyro_solver_node)
+        """
         # look for SOP pyrosolver node type only
         sop_pyrosolver_instances = hou.sopNodeTypeCategory().nodeTypes()["pyrosolver"].instances()
         #
@@ -133,6 +188,7 @@ class sparsePyroUpres:
             self.sop_pyro_solver_node = sop_pyrosolver_instances[0]
         else:
             return "No Sop PyroSolver node found"
+        """
 
     def create_sop_upres_node(self):
         #
@@ -319,21 +375,6 @@ def copyParmFolders(upresNode,sparsePyro):
         sparseGroup.append(i)
     sparsePyro.setParmTemplateGroup(sparseGroup)
 
-def copyUpresNodes(upresNode,sparsePyro):
-    merge1 = sparsePyro.node("merge1")
-    rootNodes=["SOURCE__LOW_RES_FIELDS","compute_turb","ramp_turbscale","do_rest_autoregen3","primary_noise"]
-
-    for i in rootNodes:
-        networkBox=upresNode.node(i).parentNetworkBox()
-        for j in networkBox.nodes():
-            j.setColor(hou.Color(1,0,0))
-            pos = j.position()
-            j.setPosition((pos[0]-20,pos[1]+50))
-        hou.copyNodesTo(networkBox.nodes(),sparsePyro)
-
-    for i in rootNodes:
-        rootnode = sparsePyro.node(i)
-        merge1.setNextInput(rootnode)
 
 
 ###############################################################################
