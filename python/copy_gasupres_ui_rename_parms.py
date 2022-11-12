@@ -11,12 +11,10 @@ b.setPosition((pos[0],pos[1]-1))
 g = a.parmTemplateGroup()
 b.setParmTemplateGroup(g)
 
-
 strCode = b.asCode(True,True)
 
 x = []
 tokens = ['parm','ParmTemplate']
-#rep = []
 
 for i in strCode.split("\n"):
     for token in tokens:
@@ -43,14 +41,10 @@ for i in strCode.split("\n"):
 
     x.append(i)
 
-
-
 code = "\n".join(x)
 
 with open("/home/bunker/Desktop/temp","w") as f:
     f.write(code)
-
-
 
 b.destroy()
 exec(code)
