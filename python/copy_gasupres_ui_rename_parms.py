@@ -3,31 +3,31 @@ import re
 
 # get gas upres node, create a null and copy+rename all parms and expressions
 # add "_GU" to all
-a = hou.node('/obj/geo2/lowres1_upres/dopnet1/pyro_solver/solver/gasupres1')
-pos = a.position()
-b = a.parent().createNode("null")
-b.setPosition((pos[0],pos[1]-1))
+gu = hou.node('/obj/geo2/lowres1_upres/dopnet1/pyro_solver/solver/gasupres1')
+pos = gu.position()
+gu_copy = gu.parent().createNode("null")
+gu_copy.setPosition((pos[0],pos[1]-1))
 
-g = a.parmTemplateGroup()
-b.setParmTemplateGroup(g)
+gu_template = gu.parmTemplateGroup()
+gu_copy.setParmTemplateGroup(gu_template)
 
-strCode = b.asCode(True,True)
+strCode = gu_copy.asCode(True,True)
 
-x = []
+new_lines = []
 tokens = ['parm','ParmTemplate']
 
-for i in strCode.split("\n"):
+for line in strCode.split("\n"):
     for token in tokens:
         t = token+'("'
-        if t in i:
-            l = i.split('("')[1].split('"')[0]
+        if t in line:
+            l = line.split('("')[1].split('"')[0]
             if not l.startswith("/") and not l.startswith("$"):
-                if len(i)>1:
-                    i = re.sub(l,l+"_GU",i,1)
+                if len(line)>1:
+                    line = re.sub(l,l+"_GU",line,1)
 
     # deal with disable/hide when expressions
-    if '"{' in i:
-        l = i.split("{")
+    if '"{' in line:
+        l = line.split("{")
         l.pop(0)
         names = []
         for j in l:
@@ -37,15 +37,16 @@ for i in strCode.split("\n"):
         # remove duplicates    
         names = list(set(names))
         for name in names:
-            i = re.sub(name,name+"_GU",i)
+            line = re.sub(name,name+"_GU",line)
 
-    x.append(i)
+    new_lines.append(line)
 
-code = "\n".join(x)
+new_asCode = "\n".join(new_lines)
 
-with open("/home/bunker/Desktop/temp","w") as f:
-    f.write(code)
+# write to disk for debug purpose
+# with open("/tmp/temp","w") as f:
+#     f.write(code)
 
-b.destroy()
-exec(code)
+gu_copy.destroy()
+exec(new_asCode)
 
