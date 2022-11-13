@@ -48,15 +48,71 @@ class sparsePyroUpres:
 
     def copyParmFolders(self):
 
-        upresNode = self.gas_upres
+
+        # 1) create a null and copy the UI from gasupres
+        # 2) convert UI to asCode and rename all parms and expressions with "_GU" added
+        # 3) re-create a new null with updated parm names
+        # 4) add some tabs from null to solver UI in Upres Tab
+        gu = self.gas_upres
+        pos = gu.position()
+        gu_copy = gu.parent().createNode("null")
+        gu_copy.setPosition((pos[0],pos[1]-1))
+        gu_copy.setName("gasupres_copy")
+
+        gu_template = gu.parmTemplateGroup()
+        gu_copy.setParmTemplateGroup(gu_template)
+
+        strCode = gu_copy.asCode(True,True)
+
+        new_lines = []
+        tokens = ['parm','ParmTemplate']
+
+        for line in strCode.split("\n"):
+            for token in tokens:
+                t = token+'("'
+                if t in line:
+                    l = line.split('("')[1].split('"')[0]
+                    if not l.startswith("/") and not l.startswith("$"):
+                        if len(line)>1:
+                            line = re.sub(l,l+"_GU",line,1)
+
+            # deal with disable/hide when expressions
+            if '"{' in line:
+                l = line.split("{")
+                l.pop(0)
+                names = []
+                for j in l:
+                    name =  (j.split("}")[0]).split()[0]
+                    names.append(name)
+
+                # remove duplicates    
+                names = list(set(names))
+                for name in names:
+                    line = re.sub(name,name+"_GU",line)
+
+            new_lines.append(line)
+
+        new_code = "\n".join(new_lines)
+        gu_copy.destroy()
+
+        try:
+            exec(new_code)
+        except Exception:
+            pass
+            # ignore issues with deleteAllKeyframes()
+            # something isn't perfect though, need to investigate
+
+
+        # gu_copy.setName("gasupres_copy")
+        upresNode = self.gas_upres.parent().node("gasupres_copy")
         sparsePyro = self.solver
         # sparsePyro = self.sop_pyro_solver_node
 
         upresGroup = upresNode.parmTemplateGroup()
         print(">> ",upresGroup)
         # copy upres folders to sparse
-        # l = ['Simulation','Shape','Advanced']
-        l = ['Shape']
+        l = ['Simulation','Shape','Advanced']
+        # l = ['Shape']
         upresFolders=[]
         for i in l:
             folder = upresGroup.findFolder(i)
@@ -122,7 +178,6 @@ class sparsePyroUpres:
         
     # fixing some gasUpres default config issues
     def cleanupGasupresSolver(self):
-
 
         nodes_to_delete = [
         "compute_velocity_wavelets","compute_velocity_energy",
